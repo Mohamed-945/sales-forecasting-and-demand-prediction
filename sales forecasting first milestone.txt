@@ -1,0 +1,91 @@
+import pandas as pd
+import plotly.express as px
+import dash
+from dash import dcc, html
+from dash.dependencies import Input, Output
+
+# 🟢 Load the dataset
+file_path = "C:/Users/admin/Downloads/Historical Product Demand.csv"
+df = pd.read_csv(file_path)
+
+# 🟢 Data Cleaning
+df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+df = df.dropna(subset=['Date'])
+
+# Clean the Order Demand column
+df['Order_Demand'] = df['Order_Demand'].astype(str).str.replace('[^0-9]', '', regex=True)
+df['Order_Demand'] = pd.to_numeric(df['Order_Demand'], errors='coerce')
+df = df.dropna(subset=['Order_Demand'])
+df = df[df['Order_Demand'] > 0]  # Remove negative and zero values
+
+# Add new features
+df['Year'] = df['Date'].dt.year
+df['Month'] = df['Date'].dt.month
+
+# 🟢 Create Dash Application
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    html.H1("📊 Sales Demand Analysis Dashboard", style={'textAlign': 'center'}),
+
+    dcc.Dropdown(
+        id='category-dropdown',
+        options=[{'label': cat, 'value': cat} for cat in df['Product_Category'].unique()],
+        placeholder="🔍 Select a Product Category"
+    ),
+
+    # 🟢 Graphs
+    dcc.Graph(id='demand-trend'),     # ✅ Demand Trend Over Time
+    dcc.Graph(id='scatter-plot'),     # ✅ Scatter Plot of Demand Over Time
+    dcc.Graph(id='top-products'),     # ✅ Top Selling Products
+    dcc.Graph(id='top-warehouses'),   # ✅ Top Selling Warehouses
+    dcc.Graph(id='monthly-demand'),   # ✅ Monthly Demand
+    dcc.Graph(id='yearly-demand')     # ✅ Yearly Demand
+])
+
+# 🟢 Callback to update all graphs
+@app.callback(
+    [Output('demand-trend', 'figure'),
+     Output('scatter-plot', 'figure'),
+     Output('top-products', 'figure'),
+     Output('top-warehouses', 'figure'),
+     Output('monthly-demand', 'figure'),
+     Output('yearly-demand', 'figure')],
+    [Input('category-dropdown', 'value')]
+)
+def update_graphs(selected_category):
+    filtered_df = df[df['Product_Category'] == selected_category] if selected_category else df
+
+    # ⚠️ Check if filtered data is empty
+    if filtered_df.empty:
+        empty_fig = px.bar(title="⚠️ No Data Available")
+        return empty_fig, empty_fig, empty_fig, empty_fig, empty_fig, empty_fig
+
+    # 📊 1️⃣ Demand Trend Over Time
+    demand_trend = filtered_df.groupby('Date', as_index=False)['Order_Demand'].sum()
+    fig_trend = px.line(demand_trend, x='Date', y='Order_Demand', title="📈 Demand Trend Over Time")
+
+    # 📌 2️⃣ Scatter Plot of Demand
+    fig_scatter = px.scatter(filtered_df, x='Date', y='Order_Demand', title="🔵 Demand Over Time", opacity=0.6)
+
+    # 🏆 3️⃣ Top Selling Products
+    top_products = filtered_df.groupby('Product_Code', as_index=False)['Order_Demand'].sum().nlargest(10, 'Order_Demand')
+    fig_top_products = px.bar(top_products, x='Product_Code', y='Order_Demand', title="🏆 Top 10 Best-Selling Products")
+
+    # 🏢 4️⃣ Top Selling Warehouses
+    top_warehouses = filtered_df.groupby('Warehouse', as_index=False)['Order_Demand'].sum().nlargest(10, 'Order_Demand')
+    fig_top_warehouses = px.bar(top_warehouses, x='Warehouse', y='Order_Demand', title="🏢 Top 10 Best-Selling Warehouses")
+
+    # 📅 5️⃣ Monthly Demand
+    monthly_demand = filtered_df.groupby('Month', as_index=False)['Order_Demand'].sum()
+    fig_monthly = px.bar(monthly_demand, x='Month', y='Order_Demand', title='📅 Total Demand by Month')
+
+    # 📆 6️⃣ Yearly Demand
+    yearly_demand = filtered_df.groupby('Year', as_index=False)['Order_Demand'].sum()
+    fig_yearly = px.bar(yearly_demand, x='Year', y='Order_Demand', title='📆 Total Demand by Year')
+
+    return fig_trend, fig_scatter, fig_top_products, fig_top_warehouses, fig_monthly, fig_yearly
+
+# 🟢 Run the Dash Application
+if __name__ == '__main__':
+    app.run_server(debug=True)
